@@ -5,7 +5,7 @@
 
 **My Goal:**
 
-As [Farzad528](https://github.com/farzad528), I'm on a journey to learn and build with Azure AI Agents. This repository serves as my lab to experiment with various aspects, including:
+I'm on a journey to learn and build with Azure AI Agents. This repository serves as my lab to experiment with various aspects, including:
 
 *   **Tutorials & How-To Guides:**  Step-by-step guides and explanations to help you get started with Azure AI Agents. Expect to see these in the form of well-documented **Jupyter Notebooks** and more.
 *   **Random Projects & Experiments:**  Exploring different functionalities and use cases of Azure AI Agents through various coding experiments.
@@ -35,7 +35,3 @@ As [Farzad528](https://github.com/farzad528), I'm on a journey to learn and buil
 3.  **Stay Tuned!** This repository will be continuously updated with new content as I explore and build with Azure AI Agents.
 
 **Let's learn and build together in the world of Azure AI Agents!** 🤖 ✨
-
-[Link to your GitHub profile:  [https://github.com/Farzad528](https://github.com/Farzad528)]
-
-[Link to Microsoft Tech Community (if applicable, or link to Azure AI Tech Community once available)]
