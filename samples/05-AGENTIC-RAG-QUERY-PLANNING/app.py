@@ -1,14 +1,15 @@
 import os
 import json
-import requests
 import pandas as pd
 import pyodbc
-import openai
-from dotenv import load_dotenv
 import sqlalchemy
-from azure.search.documents import SearchClient
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import BingGroundingTool
 from azure.core.credentials import AzureKeyCredential
+from azure.identity import DefaultAzureCredential
+from azure.search.documents import SearchClient
 from azure.search.documents.models import VectorizableTextQuery
+from dotenv import load_dotenv
 from openai import AzureOpenAI
 import chainlit as cl
 from chainlit import Step, Starter
@@ -23,7 +24,7 @@ AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
 AZURE_OPENAI_ENDPOINT = os.getenv(
     "AZURE_OPENAI_ENDPOINT", "https://your-azure-openai-endpoint.openai.azure.com/"
 )
-AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME = os.getenv("gpt-4o", "gpt-4o-mini")
+AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME = os.getenv("AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME", "gpt-4o")
 
 AZURE_SEARCH_ENDPOINT = os.getenv(
     "AZURE_SEARCH_SERVICE_ENDPOINT", "https://your-search-service.search.windows.net"
@@ -31,8 +32,9 @@ AZURE_SEARCH_ENDPOINT = os.getenv(
 AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_ADMIN_KEY", "your-azure-search-key")
 SEARCH_INDEX_NAME = "acc-guidelines-index"
 
-BING_SEARCH_API_KEY = os.getenv("BING_SEARCH_API_KEY", "<YOUR-BING-SEARCH-KEY>")
-BING_SEARCH_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+# Azure AI Project configuration
+AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING", "your-azure-connection-string")
+BING_CONNECTION_NAME = os.getenv("BING_CONNECTION_NAME", "fsunavalabinggrounding")
 
 server = os.getenv("AZURE_SQL_SERVER_NAME")
 database = os.getenv("AZURE_SQL_DATABASE_NAME")
@@ -92,22 +94,79 @@ def search_acc_guidelines(query: str) -> str:
     return context_str
 
 
-def search_bing(query: str) -> str:
+def search_bing_grounding(query: str) -> str:
     """
-    Searches the public web using the Bing Search API.
+    Searches the public web using the Bing Web Grounding Tool via Azure AI Agent Service.
+    Returns information about recent updates from the web.
     """
-    headers = {"Ocp-Apim-Subscription-Key": BING_SEARCH_API_KEY}
-    params = {"q": query, "textDecorations": True, "textFormat": "Raw"}
-    response = requests.get(BING_SEARCH_ENDPOINT, headers=headers, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        if "webPages" in data and "value" in data["webPages"]:
-            snippets = [item.get("snippet", "") for item in data["webPages"]["value"]]
-            result_text = "\n".join(snippets)
-        else:
-            result_text = "No Bing results found."
-    else:
-        result_text = f"Bing search failed with status code {response.status_code}."
+    # Create an Azure AI Client
+    project_client = AIProjectClient.from_connection_string(
+        credential=DefaultAzureCredential(),
+        conn_str=AZURE_CONNECTION_STRING,
+    )
+    
+    try:
+        with project_client:
+            # Get the Bing connection
+            bing_connection = project_client.connections.get(
+                connection_name=BING_CONNECTION_NAME
+            )
+            conn_id = bing_connection.id
+            
+            # Initialize agent bing tool
+            bing = BingGroundingTool(connection_id=conn_id)
+            
+            # Create agent with the bing tool
+            agent = project_client.agents.create_agent(
+                model="gpt-4o", # NOTE, GPT-4o-mini cannot be used with Bing Grounding Tool 
+                name="bing-search-agent",
+                instructions=f"Search the web for information about: {query}. Provide a concise but comprehensive summary.",
+                tools=bing.definitions,
+                headers={"x-ms-enable-preview": "true"}
+            )
+            
+            # Create thread for communication
+            thread = project_client.agents.create_thread()
+            
+            # Create message to thread
+            project_client.agents.create_message(
+                thread_id=thread.id,
+                role="user",
+                content=query,
+            )
+            
+            # Create and process agent run
+            run = project_client.agents.create_and_process_run(
+                thread_id=thread.id, 
+                assistant_id=agent.id
+            )
+            
+            if run.status == "failed":
+                result_text = f"Bing search failed: {run.last_error}"
+            else:
+                # Fetch messages to get the response
+                messages = project_client.agents.list_messages(thread_id=thread.id)
+                # Get the last assistant message
+                assistant_messages = [m for m in messages.get('data', []) if m.get('role') == 'assistant']
+                if assistant_messages:
+                    # Extract the text content from the last assistant message
+                    content_list = assistant_messages[-1].get('content', [])
+                    result_text = ""
+                    for content_item in content_list:
+                        if isinstance(content_item, dict) and 'text' in content_item:
+                            result_text += content_item.get('text', "")
+                    
+                    if not result_text:
+                        result_text = "No results found."
+                else:
+                    result_text = "No results found."
+            
+            # Clean up resources
+            project_client.agents.delete_agent(agent.id)
+            
+    except Exception as e:
+        result_text = f"Bing search failed with error: {str(e)}"
+    
     return result_text
 
 
@@ -201,8 +260,8 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "search_bing",
-            "description": "Perform a public web search for real-time or external information.",
+            "name": "search_bing_grounding",
+            "description": "Perform a public web search for real-time or external information using Bing Grounding.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -216,17 +275,17 @@ tools = [
         },
     },
 ]
+
 tool_implementations = {
     "lookup_patient_data": lookup_patient_data,
     "search_acc_guidelines": search_acc_guidelines,
-    "search_bing": search_bing,
+    "search_bing_grounding": search_bing_grounding,
 }
 
 
 # ----------------------------
 # Chainlit Step for Tool Execution
 # ----------------------------
-# Replace the existing execute_tool step with three separate steps.
 @cl.step(name="NL2SQL Tool", type="tool")
 async def lookup_patient_data_step(function_args: dict):
     """
@@ -243,12 +302,12 @@ async def search_acc_guidelines_step(function_args: dict):
     return search_acc_guidelines(**function_args)
 
 
-@cl.step(name="Bing Web Search Tool", type="tool")
-async def search_bing_step(function_args: dict):
+@cl.step(name="Bing Web Grounding Tool", type="tool")
+async def search_bing_grounding_step(function_args: dict):
     """
-    Execute the search_bing tool as a Chainlit step.
+    Execute the search_bing_grounding tool as a Chainlit step.
     """
-    return search_bing(**function_args)
+    return search_bing_grounding(**function_args)
 
 
 # ----------------------------
@@ -258,7 +317,7 @@ SYSTEM_PROMPT = (
     "You are a cardiology-focused AI assistant with access to three tools:\n"
     "1) 'lookup_patient_data' for querying patient records from Azure SQL.\n"
     "2) 'search_acc_guidelines' for official ACC guidelines.\n"
-    "3) 'search_bing' for real-time public information.\n\n"
+    "3) 'search_bing_grounding' for real-time public information using Bing Grounding.\n\n"
     "You can call these tools in any order, multiple times if needed, to gather all the context.\n"
     "Stop calling tools only when you have enough information to provide a final, cohesive answer.\n"
     "Then output your final answer to the user."
@@ -306,20 +365,22 @@ async def run_multi_step_agent(user_query: str, max_steps: int = 5):
                     tool_output = await search_acc_guidelines_step(
                         function_args=function_args
                     )
-                elif function_name == "search_bing":
-                    tool_output = await search_bing_step(function_args=function_args)
+                elif function_name == "search_bing_grounding":
+                    tool_output = await search_bing_grounding_step(
+                        function_args=function_args
+                    )
                 else:
                     tool_output = (
                         f"[Error] No implementation for function '{function_name}'."
                     )
 
-                # Now add the tool's response to the conversation using the function name.
+                # Now add the tool's response to the conversation as a string
                 messages.append(
                     {
                         "tool_call_id": tool_call.id,
                         "role": "tool",
                         "name": function_name,
-                        "content": tool_output,
+                        "content": str(tool_output),
                     }
                 )
 
@@ -348,7 +409,7 @@ async def set_starters():
             ),
         ),
         Starter(
-            label="❓ As of Feb 2025, new anticoagulant therapies from the FDA? (BING SEARCH)",
+            label="❓ As of Feb 2025, new anticoagulant therapies from the FDA? (BING GROUNDING)",
             message="Are there any recent updates in 2025 on new anticoagulant therapies from the FDA?",
         ),
         Starter(
@@ -367,7 +428,9 @@ async def set_starters():
 # ----------------------------
 # @cl.on_chat_start
 # async def start_chat():
-#     await cl.Message(content="Hello! I am a cardiology-focused AI assistant. Ask me anything about cardiology guidelines or patient data.").send()
+#     await cl.Message(
+#         content="Hello! I am a cardiology-focused AI assistant with access to patient data, ACC guidelines, and real-time web information through Bing Grounding. How can I help you today?"
+#     ).send()
 
 
 @cl.on_message
