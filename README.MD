@@ -46,6 +46,17 @@ This playground is organized into different sample folders, each focusing on a s
 - Delve into creating sophisticated agents that can route queries to the most relevant information source.
 - Run the app.py Chainlit application and explore the chainlit.md documentation for details.
 
+### [samples/05-AGENTIC-RAG-QUERY-PLANNING](./samples/05-AGENTIC-RAG-QUERY-PLANNING)
+**🔍 Use this repo for:** Creating multi-step agentic RAG systems that can orchestrate queries across multiple data sources with advanced planning capabilities.
+
+- Build a cardiology-focused AI assistant that integrates three distinct data sources:
+  - **Structured Data**: Patient records from Azure SQL Database
+  - **Unstructured Data**: Medical guidelines from Azure AI Search
+  - **Web Data**: Real-time information using Azure AI Agent Service with Bing Grounding Tool
+- Experience how the agent dynamically decides which tools to use and in what order
+- See how complex medical queries can be broken down into multiple steps for comprehensive answers
+- Explore the Jupyter notebook for a detailed walkthrough or run the Chainlit app for an interactive demo
+
 ## 🚀 Quick Start
 
 Ready to jump in? Here's how to get started:
