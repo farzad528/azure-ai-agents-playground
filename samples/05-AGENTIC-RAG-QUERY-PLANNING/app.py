@@ -24,7 +24,9 @@ AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
 AZURE_OPENAI_ENDPOINT = os.getenv(
     "AZURE_OPENAI_ENDPOINT", "https://your-azure-openai-endpoint.openai.azure.com/"
 )
-AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME = os.getenv("AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME", "gpt-4o")
+AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME = os.getenv(
+    "AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME", "gpt-4o"
+)
 
 AZURE_SEARCH_ENDPOINT = os.getenv(
     "AZURE_SEARCH_SERVICE_ENDPOINT", "https://your-search-service.search.windows.net"
@@ -33,7 +35,9 @@ AZURE_SEARCH_KEY = os.getenv("AZURE_SEARCH_ADMIN_KEY", "your-azure-search-key")
 SEARCH_INDEX_NAME = "acc-guidelines-index"
 
 # Azure AI Project configuration
-AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING", "your-azure-connection-string")
+AZURE_CONNECTION_STRING = os.getenv(
+    "AZURE_CONNECTION_STRING", "your-azure-connection-string"
+)
 BING_CONNECTION_NAME = os.getenv("BING_CONNECTION_NAME", "fsunavalabinggrounding")
 
 server = os.getenv("AZURE_SQL_SERVER_NAME")
@@ -104,7 +108,7 @@ def search_bing_grounding(query: str) -> str:
         credential=DefaultAzureCredential(),
         conn_str=AZURE_CONNECTION_STRING,
     )
-    
+
     try:
         with project_client:
             # Get the Bing connection
@@ -112,61 +116,56 @@ def search_bing_grounding(query: str) -> str:
                 connection_name=BING_CONNECTION_NAME
             )
             conn_id = bing_connection.id
-            
+
             # Initialize agent bing tool
             bing = BingGroundingTool(connection_id=conn_id)
-            
+
             # Create agent with the bing tool
             agent = project_client.agents.create_agent(
-                model="gpt-4o", # NOTE, GPT-4o-mini cannot be used with Bing Grounding Tool 
+                model="gpt-4o",  # NOTE, GPT-4o-mini cannot be used with Bing Grounding Tool
                 name="bing-search-agent",
                 instructions=f"Search the web for information about: {query}. Provide a concise but comprehensive summary.",
                 tools=bing.definitions,
-                headers={"x-ms-enable-preview": "true"}
+                headers={"x-ms-enable-preview": "true"},
             )
-            
+
             # Create thread for communication
             thread = project_client.agents.create_thread()
-            
+
             # Create message to thread
             project_client.agents.create_message(
                 thread_id=thread.id,
                 role="user",
                 content=query,
             )
-            
+
             # Create and process agent run
             run = project_client.agents.create_and_process_run(
-                thread_id=thread.id, 
-                assistant_id=agent.id
+                thread_id=thread.id, assistant_id=agent.id
             )
-            
+
             if run.status == "failed":
                 result_text = f"Bing search failed: {run.last_error}"
             else:
                 # Fetch messages to get the response
                 messages = project_client.agents.list_messages(thread_id=thread.id)
-                # Get the last assistant message
-                assistant_messages = [m for m in messages.get('data', []) if m.get('role') == 'assistant']
-                if assistant_messages:
-                    # Extract the text content from the last assistant message
-                    content_list = assistant_messages[-1].get('content', [])
-                    result_text = ""
-                    for content_item in content_list:
-                        if isinstance(content_item, dict) and 'text' in content_item:
-                            result_text += content_item.get('text', "")
-                    
-                    if not result_text:
-                        result_text = "No results found."
-                else:
-                    result_text = "No results found."
-            
+
+                # Extract the actual message text - FIXED EXTRACTION LOGIC
+                for msg in messages.data:  # Use .data to access the list of messages
+                    if msg.role == "assistant" and msg.content:
+                        # Extract the text value from the content
+                        for content_item in msg.content:
+                            if content_item.type == "text":
+                                return content_item.text.value  # Return the actual text
+
+                result_text = "No specific information found."
+
             # Clean up resources
             project_client.agents.delete_agent(agent.id)
-            
+
     except Exception as e:
         result_text = f"Bing search failed with error: {str(e)}"
-    
+
     return result_text
 
 
@@ -342,13 +341,31 @@ async def run_multi_step_agent(user_query: str, max_steps: int = 5):
         )
         response_message = response.choices[0].message
 
-        # Add the assistant response to the conversation so that a tool response can follow
-        messages.append(response_message)
-
+        # FIXED: Properly format the assistant message with tool calls
         if response_message.tool_calls:
+            # Add the assistant message with proper structure for tool calls
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response_message.content,  # This might be None when tool_calls are present
+                    "tool_calls": [
+                        {
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments,
+                            },
+                        }
+                        for tool_call in response_message.tool_calls
+                    ],
+                }
+            )
+
             # We might have multiple tool calls in one message
             for tool_call in response_message.tool_calls:
                 function_name = tool_call.function.name
+                tool_call_id = tool_call.id  # Extract the exact tool_call_id
                 raw_args = tool_call.function.arguments
 
                 try:
@@ -375,17 +392,19 @@ async def run_multi_step_agent(user_query: str, max_steps: int = 5):
                     )
 
                 # Now add the tool's response to the conversation as a string
+                # FIXED: Use the exact tool_call_id
                 messages.append(
                     {
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": tool_call_id,
                         "role": "tool",
                         "name": function_name,
                         "content": str(tool_output),
                     }
                 )
-
         else:
-            # The model returned a final answer
+            # The model returned a final answer - no tool calls
+            messages.append({"role": "assistant", "content": response_message.content})
+
             final_answer = response_message.content
             await cl.Message(content=final_answer, author="Agent").send()
             return
