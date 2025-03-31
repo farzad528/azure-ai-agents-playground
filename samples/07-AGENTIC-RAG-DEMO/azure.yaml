@@ -1,0 +1,11 @@
+name: fsunavala-cardio-assistant
+metadata:
+  template: azd-init@1.11.1
+services:
+  chainlit:
+    project: .
+    host: containerapp
+    language: python
+    docker:
+      path: ./dockerfile
+      registry: fsunavalaregistry.azurecr.io

@@ -1,0 +1,10 @@
+chainlit>=1.0.0
+openai>=1.5.0
+python-dotenv>=1.0.0
+azure-identity>=1.15.0
+azure-ai-projects==1.0.0b8
+azure-search-documents>=11.4.0
+azure-core>=1.29.5
+pandas>=2.0.0
+pyodbc>=5.0.0
+sqlalchemy>=2.0.0

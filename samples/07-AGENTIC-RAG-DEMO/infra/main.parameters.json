@@ -1,0 +1,57 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "environmentName": {
+            "value": "${AZURE_ENV_NAME}"
+        },
+        "location": {
+            "value": "${AZURE_LOCATION}"
+        },
+        "principalId": {
+            "value": "${AZURE_PRINCIPAL_ID}"
+        },
+        "chainlitExists": {
+            "value": "${SERVICE_CHAINLIT_RESOURCE_EXISTS=false}"
+        },
+        "azureOpenAIApiKey": {
+            "value": "${AZURE_OPENAI_API_KEY}"
+        },
+        "azureOpenAIEndpoint": {
+            "value": "${AZURE_OPENAI_ENDPOINT}"
+        },
+        "azureOpenAIApiVersion": {
+            "value": "${AZURE_OPENAI_API_VERSION}"
+        },
+        "azureOpenAIChatCompletionDeployedModelName": {
+            "value": "${AZURE_OPENAI_CHAT_COMPLETION_DEPLOYED_MODEL_NAME}"
+        },
+        "azureSearchServiceEndpoint": {
+            "value": "${AZURE_SEARCH_SERVICE_ENDPOINT}"
+        },
+        "azureSearchAdminKey": {
+            "value": "${AZURE_SEARCH_ADMIN_KEY}"
+        },
+        "azureSearchIndexName": {
+            "value": "${AZURE_SEARCH_INDEX_NAME}"
+        },
+        "azureSqlServerName": {
+            "value": "${AZURE_SQL_SERVER_NAME}"
+        },
+        "azureSqlDatabaseName": {
+            "value": "${AZURE_SQL_DATABASE_NAME}"
+        },
+        "azureSqlUserName": {
+            "value": "${AZURE_SQL_USER_NAME}"
+        },
+        "azureSqlPassword": {
+            "value": "${AZURE_SQL_PASSWORD}"
+        },
+        "azureConnectionString": {
+            "value": "${AZURE_CONNECTION_STRING}"
+        },
+        "bingConnectionName": {
+            "value": "${BING_CONNECTION_NAME}"
+        }
+    }
+}

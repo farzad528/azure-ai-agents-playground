@@ -1,0 +1,12 @@
+services:
+  cardio-assistant:
+    build:
+      context: .
+    image: cardio-assistant
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./app.py:/app/app.py
+      - ./chainlit.md:/app/chainlit.md
